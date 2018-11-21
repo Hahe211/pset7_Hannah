@@ -1,5 +1,4 @@
 
-#Here is a link to my shiny app https://hahe211.shinyapps.io/Q4_midterm2/
 
 library(readxl)
 library(tidyverse)
@@ -37,142 +36,202 @@ Q4_congress <-  Q4_data %>%
   #create merged district variable
   mutate(district = str_c(state, district_n, sep = "-")) %>% 
   #calculate percentage rep_win
-  mutate(rep_win = 100*(rep_votes - dem_votes)/(dem_votes + rep_votes + other_votes)) %>% 
+  mutate(rep_win = 100*(rep_votes - dem_votes)/(dem_votes + rep_votes + other_votes))%>% 
   select(rep_win, district)
   
 
 
-#introduce forecast data from Q3 for congress, prepare to join by c("district")
-#still need to write and input rds file!
 
-Q3forQ4 <- read_rds("Q3forQ4.rds")
+#introduce forecast data from pre-election polling, prepare to join by c("district")
+#I'm using the data which I had from the midterm, including the congressional district column which I created on the midterm
 
-Q3_forQ4_congress <-  Q3forQ4 %>% 
+poll_data <- read_rds("pset7_data.rds")
+
+
+#calculate the prediction for rep advantage
+#this will cause the data to dtop the other variables so I will have to rejoin 
+poll_data2 <-  poll_data %>%
+  #combine the values for different polling waves
+  mutate(wave = fct_collapse(wave,
+                             poll = c("1", "2", "3")
+  )) %>%
   group_by(house_district, wave) %>% 
   count(response, wt = final_weight)%>% 
   # group_by(response, n) %>% 
   spread(key = response, value = n) %>% 
   #I lost the final_weight variable so I manually calculate the sum below
   mutate(all = sum(Dem,Rep, Und, `3`, `4`,`5`, `6`, na.rm = TRUE)) %>% 
-  mutate(rep_advantage = 100*(Rep - Dem)/all) %>% 
+  mutate(rep_advantage = 100*(Rep - Dem)/all)%>% 
   select(house_district, wave, rep_advantage) %>% 
-  spread(key = wave, value = rep_advantage) %>% 
-  select(-poll_1) %>% 
-  rename(rep_adv = poll_2) %>% 
+  spread(key = wave, value = rep_advantage)%>% 
+  rename(rep_adv = poll) %>% 
+  #bring back other poll values which had been dropped when doing the above calculations
+  inner_join(poll_data, by = "house_district") %>% 
+   #select the necessary variables
+  select(house_district, response, rep_adv) %>% 
+  #filter out race ethnicity responses that were blank
+  #filter(race_eth != "[DO NOT READ] Don't know/Refused") %>% 
   separate(house_district, into = c("state", "dist"), sep = 2) %>% 
   #mutate district names to be properly formatted in upper case with dash in between
   mutate(state = str_to_upper(state), district = str_c(state, dist, sep = "-")) %>% 
-  select(-state, -dist) 
-
-
-
-#introduce data for senate/gov from forecasts data pre-election
-#FIRST: read in rds data
-#send this file to TFS !!! :)
-
-use_in_Q4_senate <- read_rds("use_in_Q4_senate.rds")
-
-#Next manipulate data so it can be productively joined with post-election data
-
-Q3_forQ4_senate <- use_in_Q4_senate %>% 
-  group_by(dist_id, wave) %>% 
-  count(response, wt = final_weight)%>% 
-  # group_by(response, n) %>% 
-  spread(key = response, value = n) %>% 
-  #I lost the final_weight variable so I manually calculate the sum below
-  mutate(all = sum(Dem,Rep, Und, `4`,`5`, `6`, na.rm = TRUE)) %>% 
-  mutate(rep_advantage = 100*(Rep - Dem)/all) %>% 
-  select(dist_id, wave, rep_advantage) %>% 
-  spread(key = wave, value = rep_advantage) %>% 
-  mutate(rep_adv =  sum(`2`,`3`, na.rm = TRUE)) %>% 
-  select(dist_id, rep_adv) %>% 
-  #reformat district names to match post-election data 
-  separate(dist_id, into = c("state", "dist"), sep = 2)%>% 
-  #mutate district names to be properly formatted in upper case with dash in between
-  mutate(state = str_to_upper(state), district = str_c(state, dist, sep = "-")) %>% 
-  select(-state, -dist) 
+  select(-dist) 
 
 
 
 
 
-#join congress data  
+#join congress data, rep_win is how much the republicans won or lost by while rep_adv is the forecast of what will occur based on polling
 
-all_congress <- inner_join(Q4_congress, Q3_forQ4_congress, by = "district") %>% 
+all_congress <- inner_join(Q4_congress, poll_data2, by = "district") %>% 
   #find error, gap in percentage points between win margin and forecasted margin in polling
-   mutate(error = rep_win - rep_adv, election.type = "congress")
+   mutate(error = rep_win - rep_adv, election.type = "congress", accuracy = 100 - abs(error)) 
+  #I calculated accuracy using the forumula employed by Charlie Olmert of 100 - abs(error)
+    
 
 
- #join non-congress data
-all_non_congress <- inner_join(Q3_forQ4_senate, Q4_senate_gov, by = "district") %>% 
-#find error, gap in percentage points between win margin and forecast
-  mutate(error = rep_win - rep_adv, election.type = "senate_gov")
-
-
-#final graphic looks at the difference between prediction and reality by state
-all_data <- bind_rows(all_congress, all_non_congress) #%>% 
-     #mutate(error = as.factor(error))
-
+#now that I've created the data frame, my next step will be to plot accuracy (y value)
+#against rep_win, rep_adv with the ability to toggle by state to see if there's a relationships 
 
 
 # Define UI for the application
 ui <- fluidPage(
-  titlePanel("Examining the Forecasting Error for Fall 2018 Elections"),
-  h2("How did the Pew Polling Forecasts differ from Outcomes?"), 
-  em("I chose a task slightly different from the assignment: to look at how the prediction error differed by district"),
+  
+  titlePanel("Examining the Forecasting Accuracy for Fall 2018 Elections"),
+ 
+  # Sidebar - inspired by Ms. Gaytons sidebar with the idea to toggle states on and off
   sidebarLayout(
     sidebarPanel(
-      numericInput("size", "Point size", 1, 1),
-      radioButtons("colour", "Point colour",
-                   choices = c("blue", "red", "green", "black"
-                               ))
-     #selectInput("election.types", "Election.types",
-          #       choices = levels(all_data$election.type),
-                #  multiple = TRUE,
-                #  selected = "congress")
-     ),
+      selectInput("x",
+                  "X-axis:",
+                  c(`Polled Republican Advantage` = "rep_adv",
+                    `Actual Republican Advantage` = "rep_win")),
+      checkboxInput("line", label = "Add linear model"),
+      htmlOutput("see_table"),
+      htmlOutput("regression_table"),
+      h2("Choose states to display"),
+      checkboxGroupInput("state", "States to show:",
+                         c("California" = "CA",
+                           "Florida" = "FL",
+                           "Illinois" = "IL",
+                           "Kansas" = "KS",
+                           "Michigan" = "MI",
+                           "North Carolina" = "NC",
+                           "New Jersey" = "NJ",
+                           "New York" = "NY",
+                           "Pennsylvania" = "PA",
+                           "Texas" = "TX",
+                           "Virginia" = "VA"), selected = all_congress$state),
+      actionButton("selectall", label="Select/Deselect all")
+    ),
+    
+  
   
     mainPanel(
-      plotOutput("plot", width = 500, height = 500),
-      plotOutput("plot2", width = 500, height = 500)
+      h3("Summary of Findings"),
+      h5("In a simple linear regression relating the error margin (the difference between polled Republican advantage 
+         and actual Republican advantage)in Upshot polls to 16 other political and demographic variables, only 
+         Republican advantage is significantly correlated with the error margin at the 95% confidence level when all
+         states are included. However, this may be influenced by a handful of districts with very high predicted 
+         Republican advantage but low actual Republican advantage. What states are those districts in? 
+         See what happens when you remove them from the data!"),
+      plotOutput("distPlot")
     )
-  )
-)
+    )
+    )
 
-# Define the server logic
-server <- function(input, output) {
-  output$plot <- renderPlot({
-     #data <- subset(all_data,
-            #       election.type %in% input$election.types)
-                   
-    p <- ggplot(all_non_congress, aes(district, error)) +
-      geom_point(size = input$size, col = input$colour) +
-      ggtitle("Forecast Error in Senate and Gov Elections")+
-      xlab("Senate or Governor Race") + ylab("Forecast Error in Republican Win Margin")
+
+  # Define server logic required to draw a histogram
+  server <- function(input, output, session) {
     
-    p
+    observe({
+      if (input$selectall > 0) {
+        if (input$selectall %% 2 == 0){
+          updateCheckboxGroupInput(session=session, 
+                                   inputId="state",
+                                   choices = list("California" = "CA",
+                                                  "Florida" = "FL",
+                                                  "Illinois" = "IL",
+                                                  "Kansas" = "KS",
+                                                  "Michigan" = "MI",
+                                                  "North Carolina" = "NC",
+                                                  "New Jersey" = "NJ",
+                                                  "New York" = "NY",
+                                                  "Pennsylvania" = "PA",
+                                                  "Texas" = "TX",
+                                                  "Virginia" = "VA"),
+                                   selected = all_congress$state)
+          
+        } else {
+          updateCheckboxGroupInput(session=session, 
+                                   inputId="state",
+                                   choices = list("California" = "CA",
+                                                  "Florida" = "FL",
+                                                  "Illinois" = "IL",
+                                                  "Kansas" = "KS",
+                                                  "Michigan" = "MI",
+                                                  "North Carolina" = "NC",
+                                                  "New Jersey" = "NJ",
+                                                  "New York" = "NY",
+                                                  "Pennsylvania" = "PA",
+                                                  "Texas" = "TX",
+                                                  "Virginia" = "VA"),
+                                   selected = c())
+          
+        }}
+    })
     
-  })
-  
-  output$plot2 <- renderPlot({
- 
+    output$distPlot <- renderPlot({
+      
+      filteredData <- reactive ({
+        df <- all_congress[all_congress$state %in% input$state,]
+      })
+      # 
+      # for(i in 1:length(variables)) {
+      #   if(input$x == variables[i]) {
+      #     x_axis <- labels[i]
+      #     break
+      #   }
+      #   else {
+      #     i <- i + 1
+      #   }
+      # }
+      
+      if(input$line == TRUE) {
+        ggplot(filteredData(), aes_string(x = input$x, y = "error", col = "state")) + geom_jitter() + 
+          geom_smooth(inherit.aes = FALSE, aes_string(x = input$x, y = "error"), method = "lm") + 
+          labs(x = x_axis, y = "Percent Error", color = "State")
+      } 
+      else {
+        ggplot(filteredData(), aes_string(x = input$x, y = "error", color = "state")) + geom_jitter() + 
+          labs(x = x_axis, y = "Percent Error", color = "State")
+      }
+    })
     
-    q <- ggplot(all_congress, aes(district, error)) +
-      geom_point(size = input$size, col = input$colour) +
-      ggtitle("Forecast Error in Congressional Elections")+
-      xlab("Congressional District") + ylab("Forecast Error in Republican Win Margin")
+    output$see_table <- renderUI ({
+      if(input$line == TRUE) {
+        h5("Please consult the regression table below to see if the relationship is statistically significant:")
+      }
+    })
     
-    q
-  })
+    output$regression_table <- renderUI({
+      filteredData <- reactive ({
+        df <- all_congress[all_congress$state %in% input$state,]
+      })
+      
+      if(input$line == TRUE) {
+        if(length(input$state) > 0) {
+          model <- reactive({ form <- as.formula( paste( "error ~", paste(names(filteredData())[names(filteredData()) %in% input$x], collapse="+")))
+          lm(form, data=filteredData())
+          })
+          HTML(stargazer(model(), type = "html"))
+        }
+        else {
+          h5("No states selected.")
+        }
+      }
+    })
+    
+  }
   
-  
-  
-}
-
-# Run the application
-shinyApp(ui = ui, server = server)
-
-
-
-
-
+  # Run the application 
+  shinyApp(ui = ui, server = server)
