@@ -105,6 +105,9 @@ all_congress <- inner_join(Q4_congress, poll_data2, by = "district") %>%
   mutate(error = rep_win - rep_adv, election.type = "congress", accuracy = 100 - abs(error)) 
 #I calculated accuracy using the forumula employed by Charlie Olmert of 100 - abs(error)
 
+
+write_rds(all_congress, "all_congress.rds")
+
 ```
 
 

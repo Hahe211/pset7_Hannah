@@ -105,7 +105,7 @@ ui <- fluidPage(
                   "X-axis:",
                   c(`Polled Republican Advantage` = "rep_adv",
                     `Actual Republican Advantage` = "rep_win")),
-      checkboxInput("line", label = "Add linear model"),
+      #checkboxInput("line", label = "Add linear model"),
       htmlOutput("see_table"),
       htmlOutput("regression_table"),
       h2("Choose states to display"),
@@ -128,12 +128,7 @@ ui <- fluidPage(
   
     mainPanel(
       h3("Summary of Findings"),
-      h5("In a simple linear regression relating the error margin (the difference between polled Republican advantage 
-         and actual Republican advantage)in Upshot polls to 16 other political and demographic variables, only 
-         Republican advantage is significantly correlated with the error margin at the 95% confidence level when all
-         states are included. However, this may be influenced by a handful of districts with very high predicted 
-         Republican advantage but low actual Republican advantage. What states are those districts in? 
-         See what happens when you remove them from the data!"),
+      h5("tbd"),
       plotOutput("distPlot")
     )
     )
